@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GitHub Activity Visualizer</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --bg2: #161b22; --border: #30363d; --text: #e6edf3;
+    --muted: #8b949e; --accent: #58a6ff; --green: #3fb950; --purple: #bc8cff;
+    --orange: #f0883e; --pink: #f778ba; --yellow: #d29922;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; min-height: 100vh; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  header { padding: 24px 32px 0; max-width: 1200px; margin: 0 auto; }
+  h1 { font-size: 26px; font-weight: 600; }
+  h1 span { color: var(--muted); font-weight: 400; }
+
+  .searchbar { display: flex; gap: 10px; margin: 20px 0 8px; flex-wrap: wrap; }
+  .searchbar input[type=text] { background: var(--bg2); border: 1px solid var(--border); color: var(--text); padding: 10px 14px; border-radius: 8px; font-size: 15px; outline: none; }
+  .searchbar input#username { flex: 1; min-width: 220px; }
+  .searchbar input#token { flex: 1; min-width: 220px; }
+  .searchbar input:focus { border-color: var(--accent); }
+  button { background: #238636; color: #fff; border: none; padding: 10px 20px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  button:hover { background: #2ea043; }
+  button:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
+  .hint { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+
+  #status { padding: 10px 0; color: var(--muted); min-height: 22px; }
+  #status.error { color: #f85149; }
+
+  main { max-width: 1200px; margin: 0 auto; padding: 0 32px 60px; }
+
+  /* Profile card */
+  .profile { display: flex; gap: 20px; align-items: center; background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 24px; }
+  .profile img { width: 84px; height: 84px; border-radius: 50%; border: 2px solid var(--border); }
+  .profile .who { flex: 1; }
+  .profile .who h2 { font-size: 20px; }
+  .profile .who .login { color: var(--accent); margin-bottom: 6px; display: inline-block; }
+  .profile .who .bio { color: var(--muted); font-size: 14px; max-width: 640px; }
+  .stats { display: flex; gap: 24px; flex-wrap: wrap; }
+  .stat { text-align: center; min-width: 90px; }
+  .stat b { display: block; font-size: 24px; }
+  .stat span { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+
+  .statstrip { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .kpi { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+  .kpi b { font-size: 26px; display: block; }
+  .kpi span { font-size: 12px; color: var(--muted); }
+  .kpi small { display:block; font-size: 11px; color: var(--muted); margin-top:2px; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .grid > *, .card, .chartwrap { min-width: 0; }
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .card.full { grid-column: 1 / -1; }
+  .card h3 { font-size: 15px; margin-bottom: 14px; color: var(--text); font-weight: 600; }
+  .card h3 small { color: var(--muted); font-weight: 400; }
+  .chartwrap { position: relative; height: 280px; }
+  .chartwrap.tall { height: 340px; }
+
+  /* Heatmap */
+  .heat { overflow-x: auto; padding-bottom: 6px; }
+  .heat table { border-collapse: separate; border-spacing: 3px 3px; }
+  .heat td { width: 12px; height: 12px; border-radius: 3px; background: #21262d; }
+  .heat td.l1 { background: #0e4429; } .heat td.l2 { background: #006d32; }
+  .heat td.l3 { background: #26a641; } .heat td.l4 { background: #39d353; }
+  .heat td.empty { background: transparent; }
+  .heat .dow { font-size: 10px; color: var(--muted); width: 30px; }
+  .heat .mon { font-size: 10px; color: var(--muted); text-align: left; }
+  .legend { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); margin-top: 10px; }
+  .legend i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+
+  /* Top repos list */
+  .repolist { list-style: none; }
+  .repolist li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+  .repolist li:last-child { border-bottom: none; }
+  .repolist .cnt { color: var(--muted); margin-left: auto; font-variant-numeric: tabular-nums; }
+  .repolist .bar { height: 8px; background: var(--accent); border-radius: 4px; opacity: .55; }
+
+  #content { display: none; }
+  .pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; vertical-align: middle; margin-left: 10px; }
+  .pill.private { background: rgba(188,140,255,.15); color: var(--purple); border: 1px solid rgba(188,140,255,.4); }
+  .pill.public { background: rgba(139,148,158,.1); color: var(--muted); border: 1px solid var(--border); }
+  select#yearSel { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 4px 8px; border-radius: 6px; font-size: 12px; outline: none; cursor: pointer; }
+  .yoytab { width: 100%; margin-top: 16px; border-collapse: collapse; font-size: 13px; }
+  .yoytab th { text-align: right; color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 10px; letter-spacing: .5px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+  .yoytab th:first-child, .yoytab td:first-child { text-align: left; }
+  .yoytab td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+  .yoytab tr:last-child td { border-bottom: none; }
+  .yoytab .up { color: var(--green); } .yoytab .down { color: #f85149; } .yoytab .dim { color: var(--muted); }
+  .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--muted); border-top-color: var(--accent); border-radius: 50%; animation: r 0.8s linear infinite; vertical-align: -2px; margin-right: 8px; }
+  @keyframes r { to { transform: rotate(360deg); } }
+
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>GitHub Activity Visualizer <span>— explore your coding rhythm</span></h1>
+  <div class="searchbar">
+    <input id="username" type="text" placeholder="GitHub username (e.g. torvalds)" spellcheck="false">
+    <input id="token" type="text" placeholder="Optional: GitHub PAT (repo scope = private data too)" spellcheck="false">
+    <button id="loadBtn">Visualize</button>
+  </div>
+  <div class="hint">Without a token: last ~300 events (about a month). With a PAT: full contribution calendar (1 year) + 10x rate limits.<br><b>Private data:</b> create a <a href="https://github.com/settings/tokens/new?scopes=repo&description=Activity+Visualizer" target="_blank">classic PAT with the <code>repo</code> scope</a> and enter <i>your own</i> username — the app then uses authenticated endpoints and includes private repos &amp; events. Token stays in your browser (localStorage) and is only sent to api.github.com.</div>
+  <div id="status"></div>
+</header>
+
+<main>
+<div id="content">
+  <div class="profile" id="profileCard">
+    <img id="avatar" src="" alt="">
+    <div class="who">
+      <h2 id="name"></h2>
+      <span class="pill" id="scopeBadge" style="display:none"></span>
+      <a id="login" class="login" href="#" target="_blank"></a>
+      <div class="bio" id="bio"></div>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="sRepos">0</b><span>repos</span></div>
+      <div class="stat"><b id="sFollowers">0</b><span>followers</span></div>
+      <div class="stat"><b id="sStars">0</b><span>stars earned</span></div>
+    </div>
+  </div>
+
+  <div class="statstrip">
+    <div class="kpi"><b id="kContribs">0</b><span>contributions (last year)</span><small id="kContribsNote">requires token</small></div>
+    <div class="kpi"><b id="kStreak">0</b><span>longest streak (days)</span></div>
+    <div class="kpi"><b id="kActiveDays">0</b><span>active days in window</span></div>
+    <div class="kpi"><b id="kCommits">0</b><span>commits in window</span></div>
+    <div class="kpi"><b id="kPRs">0</b><span>pull requests</span></div>
+    <div class="kpi"><b id="kIssues">0</b><span>issues opened</span></div>
+    <div class="kpi"><b id="kReviews">0</b><span>reviews given</span></div>
+  </div>
+
+  <div class="grid">
+    <div class="card full">
+      <h3>Year over year <small>— 2022 → today, stacked by contribution type</small><small id="noteYoY" style="display:block;font-weight:400;font-size:11px;color:var(--orange);margin-top:3px"></small></h3>
+      <div class="chartwrap tall"><canvas id="chartYoY"></canvas></div>
+      <div id="yoyTable"></div>
+    </div>
+
+    <div class="card full">
+      <h3 style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">Contribution heatmap <small>— daily activity, greener = more</small><select id="yearSel"></select></h3>
+      <div class="heat" id="heatmap"></div>
+      <div class="legend">Less <i style="background:#21262d"></i><i class="l1" style="background:#0e4429"></i><i style="background:#006d32"></i><i style="background:#26a641"></i><i style="background:#39d353"></i> More</div>
+    </div>
+
+    <div class="card">
+      <h3>Activity type breakdown</h3>
+      <div class="chartwrap"><canvas id="chartTypes"></canvas></div>
+    </div>
+
+    <div class="card">
+      <h3>Activity by day of week × hour <small>— when you code</small><small id="noteDayHour" style="display:block;font-weight:400;font-size:11px;color:var(--orange);margin-top:3px"></small></h3>
+      <div class="chartwrap"><canvas id="chartHourly"></canvas></div>
+    </div>
+
+    <div class="card">
+      <h3>Activity over time <small>— contributions per week</small></h3>
+      <div class="chartwrap tall"><canvas id="chartTimeline"></canvas></div>
+    </div>
+
+    <div class="card">
+      <h3>Top repositories <small>— by event count</small></h3>
+      <div class="chartwrap tall"><canvas id="chartRepos"></canvas></div>
+    </div>
+
+    <div class="card">
+      <h3>Language distribution <small>— across your repos</small></h3>
+      <div class="chartwrap tall"><canvas id="chartLangs"></canvas></div>
+    </div>
+
+    <div class="card">
+      <h3>Most active hours <small>— cumulative by hour of day</small><small id="noteHours" style="display:block;font-weight:400;font-size:11px;color:var(--orange);margin-top:3px"></small></h3>
+      <div class="chartwrap"><canvas id="chartHours"></canvas></div>
+    </div>
+  </div>
+</div>
+</main>
+
+<script>
+const GH = 'https://api.github.com';
+const $ = id => document.getElementById(id);
+const charts = {};
+let YEARLY = [];
+let token = localStorage.getItem('gh_token') || '';
+$('token').value = token;
+
+function setStatus(msg, cls) { const s = $('status'); s.innerHTML = msg || ''; s.className = cls || ''; }
+
+async function ghFetch(url) {
+  const headers = { 'Accept': 'application/vnd.github+json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  const res = await fetch(url, { headers });
+  if (res.status === 404) throw new Error('User not found: check the spelling');
+  if (res.status === 401) throw new Error('Invalid or expired token');
+  if (res.status === 403) throw new Error('Rate limit reached. Add a PAT token or wait a bit.');
+  if (!res.ok) throw new Error('GitHub API error ' + res.status);
+  return res.json();
+}
+
+async function ghFetchAll(url, maxPages) {
+  const all = [];
+  for (let p = 1; p <= (maxPages || 3); p++) {
+    const sep = url.includes('?') ? '&' : '?';
+    let page;
+    try { page = await ghFetch(url + sep + 'per_page=100&page=' + p); }
+    catch (e) { if (all.length) break; throw e; }  // keep partial data if later pages fail
+    if (!Array.isArray(page) || page.length === 0) break;
+    all.push(...page);
+    if (page.length < 100) break;
+  }
+  return all;
+}
+
+const TYPE_LABELS = {
+  PushEvent: 'Push', PullRequestEvent: 'Pull Request', IssuesEvent: 'Issue',
+  IssueCommentEvent: 'Issue Comment', PullRequestReviewEvent: 'Review',
+  PullRequestReviewCommentEvent: 'Review Comment', CreateEvent: 'Create (repo/branch)',
+  DeleteEvent: 'Delete', ForkEvent: 'Fork', WatchEvent: 'Starred',
+  ReleaseEvent: 'Release', CommitCommentEvent: 'Commit Comment',
+  PublicEvent: 'Made Public', GollumEvent: 'Wiki', MemberEvent: 'Member'
+};
+const TYPE_COLORS = ['#58a6ff','#3fb950','#bc8cff','#f0883e','#f778ba','#d29922','#79c0ff','#8b949e','#a371f7','#39c5cf','#e3b341','#db6d28','#539bf5','#b085f5','#f85149'];
+
+function dayKey(d) { return d.toISOString().slice(0, 10); }
+
+function buildHeatmap(counts, startDate) {
+  // counts: { 'YYYY-MM-DD': n }, startDate: Date (a Sunday ideally)
+  const start = new Date(startDate); start.setHours(0,0,0,0);
+  const today = new Date(); today.setHours(23,59,59,999);
+  // align to Sunday
+  start.setDate(start.getDate() - start.getDay());
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const dows = ['', 'Mon', '', 'Wed', '', 'Fri', ''];
+  let html = '<table><tr><td class="empty"></td>';
+  const monthCells = [];
+  let cur = new Date(start), col = 0, lastMonth = -1;
+  const cols = [];
+  while (cur <= today) {
+    const m = cur.getMonth();
+    monthCells.push(m !== lastMonth ? months[m] : ''); lastMonth = m;
+    cols.push(new Date(cur));
+    cur.setDate(cur.getDate() + 7); col++;
+  }
+  for (let i = 0; i < cols.length; i++) html += '<td class="mon" style="height:14px">' + monthCells[i] + '</td>';
+  html += '</tr>';
+  for (let dow = 0; dow < 7; dow++) {
+    html += '<tr><td class="dow">' + dows[dow] + '</td>';
+    for (let i = 0; i < cols.length; i++) {
+      const d = new Date(cols[i]); d.setDate(d.getDate() + dow);
+      if (d > today) { html += '<td class="empty"></td>'; continue; }
+      const k = dayKey(d);
+      const n = counts[k] || 0;
+      const lvl = n === 0 ? 0 : n <= 2 ? 1 : n <= 5 ? 2 : n <= 10 ? 3 : 4;
+      html += `<td class="l${lvl}" title="${k}: ${n} contribution${n===1?'':'s'}"></td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</table>';
+  $('heatmap').innerHTML = html;
+}
+
+function makeChart(id, cfg) {
+  if (charts[id]) charts[id].destroy();
+  Chart.defaults.color = '#8b949e';
+  Chart.defaults.borderColor = '#30363d';
+  Chart.defaults.animation = false;
+  Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
+  charts[id] = new Chart($(id), cfg);
+}
+
+async function load() {
+  const user = $('username').value.trim().replace(/^@/, '');
+  token = $('token').value.trim();
+  localStorage.setItem('gh_token', token);
+  if (!user) { setStatus('Please enter a username.', 'error'); return; }
+  $('loadBtn').disabled = true;
+  $('content').style.display = 'none';
+  setStatus('<span class="spin"></span>Fetching data from GitHub…');
+
+  try {
+    // 1. Profile
+    const profile = await ghFetch(`${GH}/users/${user}`);
+
+    // 1b. If the token belongs to this same user, unlock private data
+    let privateMode = false;
+    if (token) {
+      try {
+        const me = await ghFetch(`${GH}/user`);
+        privateMode = me.login.toLowerCase() === profile.login.toLowerCase();
+      } catch (e) { console.warn('Token identity check failed:', e); }
+    }
+
+    // 2. Events — /users/{user}/events includes private events when authenticated as
+    //    that user (note: /user/events is NOT usable by OAuth-app & fine-grained tokens)
+    const eventsUrl = `${GH}/users/${user}/events`;
+    let events = [];
+    try { events = await ghFetchAll(eventsUrl, privateMode ? 10 : 3); }
+    catch (e) { if (!/rate limit/i.test(e.message)) console.warn(e); }
+
+    // 3. Repos for languages & stars (visibility=all includes private repos)
+    const reposUrl = privateMode ? `${GH}/user/repos?sort=pushed&visibility=all` : `${GH}/users/${user}/repos?sort=pushed`;
+    let repos = [];
+    try { repos = await ghFetchAll(reposUrl, 10); } catch (e) { console.warn(e); }
+
+    // 4. Token: contribution calendar + totals via GraphQL (1 year, includes private)
+    let calendar = null, cc = null;
+    if (token) {
+      try {
+        const q = { query: `query($u:String!){ user(login:$u){ contributionsCollection { totalCommitContributions totalPullRequestContributions totalIssueContributions totalPullRequestReviewContributions totalRepositoryContributions restrictedContributionsCount commitContributionsByRepository(maxRepositories: 10){ repository{ nameWithOwner } contributions(first:1){ totalCount } } contributionCalendar { totalContributions weeks { contributionDays { contributionCount date } } } } } }`, variables: { u: user } };
+        const res = await fetch('https://api.github.com/graphql', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify(q)
+        });
+        const j = await res.json();
+        if (j.errors) throw new Error(j.errors[0].message);
+        cc = j.data.user.contributionsCollection;
+        calendar = cc.contributionCalendar;
+      } catch (e) { console.warn('GraphQL failed:', e); }
+    }
+
+    // 5. Year-by-year data for the YoY comparison (2022 → now, 1 query per year)
+    let yearly = [];
+    if (token) {
+      const nowD = new Date();
+      const years = [];
+      for (let y = 2022; y <= nowD.getFullYear(); y++) years.push(y);
+      yearly = (await Promise.all(years.map(async y => {
+        const from = `${y}-01-01T00:00:00Z`;
+        const to = y === nowD.getFullYear() ? nowD.toISOString().replace(/\.\d{3}Z$/, 'Z') : `${y}-12-31T23:59:59Z`;
+        try {
+          const q = { query: `query($u:String!,$from:DateTime!,$to:DateTime!){ user(login:$u){ contributionsCollection(from:$from,to:$to){ contributionCalendar{ totalContributions weeks{ contributionDays{ contributionCount date } } } totalCommitContributions totalPullRequestContributions totalIssueContributions totalPullRequestReviewContributions } } }`, variables: { u: user, from, to } };
+          const res = await fetch('https://api.github.com/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify(q) });
+          const j = await res.json();
+          if (j.errors) throw new Error(j.errors[0].message);
+          const c = j.data.user.contributionsCollection;
+          return { year: y, calendar: c.contributionCalendar, commits: c.totalCommitContributions, prs: c.totalPullRequestContributions, issues: c.totalIssueContributions, reviews: c.totalPullRequestReviewContributions };
+        } catch (e) { console.warn('YoY query failed for', y, e); return { year: y, calendar: null }; }
+      }))).filter(r => r.calendar);
+    }
+
+    render(profile, events, repos, calendar, privateMode, cc, yearly);
+    setStatus('');
+  } catch (e) {
+    setStatus(e.message, 'error');
+  } finally {
+    $('loadBtn').disabled = false;
+  }
+}
+
+function render(profile, events, repos, calendar, privateMode, cc, yearly) {
+  $('content').style.display = 'block';
+
+  // Events API empty (e.g. fine-grained PATs can't access it) → fall back to GraphQL data
+  const useQl = events.length === 0 && !!cc;
+  if (useQl) {
+    $('noteDayHour').textContent = ' — unavailable: this token can\'t read the events API (hourly data needs a classic PAT)';
+    $('noteHours').textContent = ' — unavailable: this token can\'t read the events API';
+  } else {
+    $('noteDayHour').textContent = '';
+    $('noteHours').textContent = '';
+  }
+
+  // Data scope badge
+  const badge = $('scopeBadge');
+  badge.style.display = 'inline-block';
+  if (privateMode) { badge.textContent = '● Public + private data'; badge.className = 'pill private'; }
+  else { badge.textContent = token ? 'Public data only (token belongs to another user)' : 'Public data only'; badge.className = 'pill public'; }
+
+  // Profile card
+  $('avatar').src = profile.avatar_url;
+  $('name').textContent = profile.name || profile.login;
+  $('login').textContent = '@' + profile.login;
+  $('login').href = profile.html_url;
+  $('bio').textContent = profile.bio || '';
+  $('sRepos').textContent = profile.public_repos;
+  $('sFollowers').textContent = profile.followers.toLocaleString();
+  const stars = repos.reduce((a, r) => a + (r.stargazers_count || 0), 0);
+  $('sStars').textContent = stars.toLocaleString();
+
+  // ---- Build daily counts (calendar preferred, fallback events) ----
+  const daily = {};
+  let calendarTotal = 0, oldest = null, haveCalendar = false;
+  if (calendar && calendar.weeks) {
+    haveCalendar = true;
+    for (const w of calendar.weeks) for (const d of w.contributionDays) {
+      daily[d.date.slice(0, 10)] = d.contributionCount;
+      calendarTotal += d.contributionCount;
+      const dt = new Date(d.date);
+      if (!oldest || dt < oldest) oldest = dt;
+    }
+  }
+  const eventDaily = {};
+  const typeCounts = {};
+  const repoCounts = {};
+  const dowHour = Array.from({length: 7}, () => Array(24).fill(0));
+  const hourTotals = Array(24).fill(0);
+  let commits = 0, prs = 0, issues = 0, reviews = 0;
+  const now = new Date();
+  const eventWindow = new Date(now.getTime() - 90 * 864e5);
+
+  for (const ev of events) {
+    const d = new Date(ev.created_at);
+    if (d < eventWindow) continue;
+    const k = dayKey(d);
+    eventDaily[k] = (eventDaily[k] || 0) + 1;
+    typeCounts[ev.type] = (typeCounts[ev.type] || 0) + 1;
+    const repo = (ev.repo && ev.repo.name || '').replace(/^[^/]+\//, '');
+    repoCounts[repo] = (repoCounts[repo] || 0) + 1;
+    const ld = d.getDay(), h = d.getHours();
+    dowHour[ld][h]++; hourTotals[h]++;
+    if (ev.type === 'PushEvent') commits += (ev.payload && ev.payload.size) || (ev.payload && ev.payload.commits && ev.payload.commits.length) || 1;
+    if (ev.type === 'PullRequestEvent' && ev.payload.action === 'opened') prs++;
+    if (ev.type === 'IssuesEvent' && ev.payload.action === 'opened') issues++;
+    if (ev.type === 'PullRequestReviewEvent') reviews++;
+  }
+
+  // Merge event counts into daily (calendar preferred per day, events fill gaps)
+  for (const k in eventDaily) daily[k] = Math.max(daily[k] || 0, eventDaily[k]);
+
+  // ---- KPIs ----
+  const activeDaysArr = Object.keys(daily).filter(k => daily[k] > 0).sort();
+  $('kActiveDays').textContent = activeDaysArr.length;
+  if (haveCalendar) {
+    $('kContribs').textContent = calendarTotal.toLocaleString();
+    $('kContribsNote').textContent = 'via contribution calendar';
+  } else {
+    $('kContribs').textContent = Object.values(eventDaily).reduce((a,b)=>a+b,0);
+    $('kContribsNote').textContent = 'last ~90 days (events only)';
+  }
+  // Streak
+  let best = 0, cur = 0;
+  if (activeDaysArr.length) {
+    let prev = null;
+    for (const k of activeDaysArr) {
+      const d = new Date(k + 'T00:00:00');
+      cur = prev && (d - prev === 864e5) ? cur + 1 : 1;
+      prev = d;
+      if (cur > best) best = cur;
+    }
+  }
+  $('kStreak').textContent = best;
+  if (useQl) {
+    commits = cc.totalCommitContributions;
+    prs = cc.totalPullRequestContributions;
+    issues = cc.totalIssueContributions;
+    reviews = cc.totalPullRequestReviewContributions;
+  }
+  $('kCommits').textContent = commits.toLocaleString();
+  $('kPRs').textContent = prs.toLocaleString();
+  $('kIssues').textContent = issues.toLocaleString();
+  $('kReviews').textContent = reviews.toLocaleString();
+
+  // ---- Heatmap ----
+  if (haveCalendar) {
+    const firstWeek = calendar.weeks[0];
+    const start = new Date(firstWeek.contributionDays[0].date);
+    buildHeatmap(daily, start);
+  } else {
+    const start = new Date(now.getTime() - 90 * 864e5);
+    buildHeatmap(eventDaily, start);
+  }
+
+  // ---- Heatmap year selector (2022 → now) ----
+  YEARLY = yearly || [];
+  const yearSel = $('yearSel');
+  yearSel.innerHTML = '<option value="recent">Last 365 days</option>' + YEARLY.slice().reverse().map(y => `<option value="${y.year}">${y.year}</option>`).join('');
+  yearSel.onchange = drawYearHeatmap;
+  function drawYearHeatmap() {
+    if (yearSel.value === 'recent') {
+      if (haveCalendar) {
+        const firstWeek = calendar.weeks[0];
+        buildHeatmap(daily, new Date(firstWeek.contributionDays[0].date));
+      } else {
+        buildHeatmap(eventDaily, new Date(now.getTime() - 90 * 864e5));
+      }
+      return;
+    }
+    const y = YEARLY.find(v => v.year == yearSel.value);
+    if (!y) return;
+    const counts = {};
+    for (const w of y.calendar.weeks) for (const d of w.contributionDays) counts[d.date.slice(0, 10)] = d.contributionCount;
+    buildHeatmap(counts, new Date(y.year + '-01-01T00:00:00'));
+  }
+
+  // ---- Year over year comparison ----
+  if (YEARLY.length) {
+    $('noteYoY').textContent = '';
+    makeChart('chartYoY', {
+      type: 'bar',
+      data: { labels: YEARLY.map(y => y.year), datasets: [
+        { label: 'Commits', data: YEARLY.map(y => y.commits), backgroundColor: '#3fb950' },
+        { label: 'Pull requests', data: YEARLY.map(y => y.prs), backgroundColor: '#bc8cff' },
+        { label: 'Issues', data: YEARLY.map(y => y.issues), backgroundColor: '#f0883e' },
+        { label: 'Reviews', data: YEARLY.map(y => y.reviews), backgroundColor: '#58a6ff' },
+        { label: 'Repos & other', data: YEARLY.map(y => Math.max(0, y.calendar.totalContributions - y.commits - y.prs - y.issues - y.reviews)), backgroundColor: '#30363d' }
+      ]},
+      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { position: 'bottom' } },
+        scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, beginAtZero: true } } }
+    });
+    let rows = '';
+    YEARLY.forEach((y, i) => {
+      const activeDays = y.calendar.weeks.reduce((a, w) => a + w.contributionDays.filter(d => d.contributionCount > 0).length, 0);
+      const p = YEARLY[i - 1];
+      let deltaHtml = '<span class="dim">—</span>';
+      if (p && p.calendar.totalContributions) {
+        const d = Math.round((y.calendar.totalContributions - p.calendar.totalContributions) / p.calendar.totalContributions * 100);
+        deltaHtml = d >= 0 ? `<span class="up">▲ +${d}%</span>` : `<span class="down">▼ ${d}%</span>`;
+      }
+      rows += `<tr><td>${y.year}</td><td><b>${y.calendar.totalContributions.toLocaleString()}</b></td><td>${deltaHtml}</td><td>${y.commits.toLocaleString()}</td><td>${y.prs.toLocaleString()}</td><td>${y.issues.toLocaleString()}</td><td>${y.reviews.toLocaleString()}</td><td>${activeDays}</td></tr>`;
+    });
+    $('yoyTable').innerHTML = '<table class="yoytab"><tr><th>Year</th><th>Contributions</th><th>vs prev</th><th>Commits</th><th>PRs</th><th>Issues</th><th>Reviews</th><th>Active days</th></tr>' + rows + '</table>';
+  } else {
+    $('noteYoY').textContent = '— requires a token (yearly data comes from the GraphQL API)';
+  }
+
+  // ---- Activity types (doughnut) ----
+  if (useQl) {
+    const totals = [
+      ['Commits', cc.totalCommitContributions],
+      ['Pull requests', cc.totalPullRequestContributions],
+      ['Issues', cc.totalIssueContributions],
+      ['Reviews', cc.totalPullRequestReviewContributions],
+      ['Repos created', cc.totalRepositoryContributions]
+    ].filter(t => t[1] > 0);
+    makeChart('chartTypes', {
+      type: 'doughnut',
+      data: { labels: totals.map(t => t[0]), datasets: [{ data: totals.map(t => t[1]), backgroundColor: TYPE_COLORS, borderColor: '#161b22', borderWidth: 2 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+    });
+  } else {
+  const typeEntries = Object.entries(typeCounts).sort((a,b) => b[1]-a[1]).slice(0, 9);
+  makeChart('chartTypes', {
+    type: 'doughnut',
+    data: { labels: typeEntries.map(([t]) => TYPE_LABELS[t] || t.replace(/Event$/,'')),
+      datasets: [{ data: typeEntries.map(e=>e[1]), backgroundColor: TYPE_COLORS, borderColor: '#161b22', borderWidth: 2 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+  });
+  }
+  const bubble = [];
+  for (let dow = 0; dow < 7; dow++) for (let h = 0; h < 24; h++)
+    if (dowHour[dow][h] > 0) bubble.push({ x: h, y: dow, r: Math.min(2 + Math.sqrt(dowHour[dow][h]) * 2.2, 18), v: dowHour[dow][h] });
+  makeChart('chartHourly', {
+    type: 'bubble',
+    data: { datasets: [{ data: bubble, backgroundColor: 'rgba(88,166,255,.55)', borderColor: 'rgba(88,166,255,.8)' }] },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][c.raw.y] + ' ' + String(c.raw.x).padStart(2,'0') + ':00 — ' + c.raw.v + ' events' } } },
+      scales: { x: { min: -0.5, max: 23.5, title: { display: true, text: 'Hour of day (local)' }, ticks: { stepSize: 3 } },
+        y: { min: -0.5, max: 6.5, ticks: { stepSize: 1, callback: v => ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][v] }, title: { display: true, text: 'Day of week' } } } }
+  });
+
+  // ---- Timeline: contributions per week ----
+  // Build event-based weekly buckets first, then choose the better data source
+  const weeks = new Map();
+  for (const ev of events) {
+    const d = new Date(ev.created_at);
+    if (d < eventWindow) continue;
+    const monday = new Date(d); monday.setHours(0,0,0,0); monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+    const k = dayKey(monday);
+    if (!weeks.has(k)) weeks.set(k, { commits: 0, prs: 0, issues: 0, other: 0 });
+    const w = weeks.get(k);
+    if (ev.type === 'PushEvent') w.commits++;
+    else if (ev.type === 'PullRequestEvent') w.prs++;
+    else if (ev.type === 'IssuesEvent') w.issues++;
+    else w.other++;
+  }
+  const wk = [...weeks.keys()].sort();
+  if (haveCalendar && (useQl || wk.length < 4)) {
+    // Events span too little time (API caps at 300) — the calendar spans a full year
+    const wkCount = new Map();
+    for (const k in daily) {
+      const d = new Date(k + 'T00:00:00');
+      const monday = new Date(d); monday.setHours(0,0,0,0); monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+      const mk = dayKey(monday);
+      wkCount.set(mk, (wkCount.get(mk) || 0) + daily[k]);
+    }
+    const wk2 = [...wkCount.keys()].sort();
+    makeChart('chartTimeline', {
+      type: 'line',
+      data: { labels: wk2, datasets: [{ label: 'All contributions', data: wk2.map(k => wkCount.get(k)), borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,.15)', fill: true, tension: .3 }] },
+      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { display: false } },
+        scales: { x: { ticks: { callback: function(v){ return wk2[v] ? wk2[v].slice(5) : ''; }, maxRotation: 0 }, grid: { display: false } }, y: { beginAtZero: true } } }
+    });
+  } else {
+  makeChart('chartTimeline', {
+    type: 'line',
+    data: { labels: wk, datasets: [
+      { label: 'Commits (pushes)', data: wk.map(k=>weeks.get(k).commits), borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,.15)', fill: true, tension: .3 },
+      { label: 'Pull requests', data: wk.map(k=>weeks.get(k).prs), borderColor: '#bc8cff', backgroundColor: 'rgba(188,140,255,.1)', fill: true, tension: .3 },
+      { label: 'Issues', data: wk.map(k=>weeks.get(k).issues), borderColor: '#f0883e', backgroundColor: 'rgba(240,136,62,.1)', fill: true, tension: .3 },
+      { label: 'Other', data: wk.map(k=>weeks.get(k).other), borderColor: '#58a6ff', backgroundColor: 'rgba(88,166,255,.08)', fill: true, tension: .3 }
+    ]},
+    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'bottom' } },
+      scales: { x: { ticks: { callback: function(v) { return wk[v] ? wk[v].slice(5) : ''; }, maxRotation: 0 }, grid: { display: false } }, y: { beginAtZero: true } } }
+  });
+  }
+
+  // ---- Top repos (horizontal bar) ----
+  if (useQl) {
+    const byRepo = (cc.commitContributionsByRepository || [])
+      .map(e => [e.repository.nameWithOwner, e.contributions.totalCount])
+      .filter(e => e[1] > 0).sort((a,b) => b[1]-a[1]).slice(0, 10).reverse();
+    makeChart('chartRepos', {
+      type: 'bar',
+      data: { labels: byRepo.map(r => r[0]), datasets: [{ data: byRepo.map(r => r[1]), backgroundColor: '#58a6ff', borderRadius: 4, maxBarThickness: 22 }] },
+      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+        scales: { x: { beginAtZero: true, ticks: { precision: 0 } } } }
+    });
+  } else {
+  const topRepos = Object.entries(repoCounts).sort((a,b)=>b[1]-a[1]).slice(0, 10).reverse();
+  makeChart('chartRepos', {
+    type: 'bar',
+    data: { labels: topRepos.map(r=>r[0]), datasets: [{ data: topRepos.map(r=>r[1]), backgroundColor: '#58a6ff', borderRadius: 4, maxBarThickness: 22 }] },
+    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+      scales: { x: { beginAtZero: true, ticks: { precision: 0 } } } }
+  });
+  }
+
+  // ---- Languages (pie) ----
+  const langs = {};
+  for (const r of repos) if (r.language) langs[r.language] = (langs[r.language] || 0) + 1;
+  const langEntries = Object.entries(langs).sort((a,b)=>b[1]-a[1]).slice(0, 8);
+  makeChart('chartLangs', {
+    type: 'pie',
+    data: { labels: langEntries.map(l=>l[0]), datasets: [{ data: langEntries.map(l=>l[1]), backgroundColor: TYPE_COLORS.slice(0, langEntries.length), borderColor: '#161b22', borderWidth: 2 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+  });
+
+  // ---- Hours (bar) ----
+  makeChart('chartHours', {
+    type: 'bar',
+    data: { labels: [...Array(24).keys()].map(h => String(h).padStart(2,'0')), datasets: [{ data: hourTotals, backgroundColor: hourTotals.map((_,h)=> h>=9&&h<18 ? '#3fb950' : h>=18&&h<23 ? '#bc8cff' : '#58a6ff'), borderRadius: 4 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+      scales: { x: { grid: { display: false } }, y: { beginAtZero: true, ticks: { precision: 0 } } } }
+  });
+}
+
+$('loadBtn').addEventListener('click', load);
+$('username').addEventListener('keydown', e => { if (e.key === 'Enter') load(); });
+$('token').addEventListener('keydown', e => { if (e.key === 'Enter') load(); });
+</script>
+</body>
+</html>
